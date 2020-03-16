@@ -1,0 +1,433 @@
+https://blog.51cto.com/lavenliu/2432899?source=dra
+
+wget -O /etc/yum.repos.d/epel.repo http://mirrors.aliyun.com/repo/epel-7.repo
+
+#源配置
+----------------------
+tee /etc/yum.repos.d/ceph.repo <<-'EOF'
+[ceph]
+name=ceph
+baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/x86_64/
+gpgcheck=0
+[ceph-noarch]
+name=cephnoarch
+baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/noarch/
+ 
+gpgcheck=0
+[ceph-source]
+name=cephsource
+baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/x86_64/
+gpgcheck=0
+[ceph-radosgw]
+name=cephradosgw
+baseurl=http://mirrors.aliyun.com/ceph/rpm-nautilus/el7/x86_64/
+gpgcheck=0
+
+EOF
+
+
+#安装包
+yum -y install epel-release.noarch
+yum clean all && yum makecache
+
+yum -y install vim wget bash-completion.noarch
+yum install ceph ceph-deploy -y
+yum install ceph-radosgw -y
+
+
+#初始化管理节点的主机名
+ceph-deploy new master01
+
+#创建集群管理者
+ceph-deploy mon create-initial
+
+
+
+先添加自己的管理节点的磁盘
+ceph-deploy osd create --data /dev/vdb ceph1
+
+[root@ceph1 ceph]# ceph -s
+  cluster:
+    id:     7eea57fb-ec17-4040-be50-62eeeebfb196
+    health: HEALTH_OK
+ 
+  services:
+    mon: 1 daemons, quorum ceph1 (age 8m)
+    mgr: no daemons active  <<------------------(小提示mgr)
+    osd: 0 osds: 0 up, 0 in
+ 
+  data:
+    pools:   0 pools, 0 pgs
+    objects: 0 objects, 0 B
+    usage:   0 B used, 0 B / 0 B avail  <<------看不到磁盘大小
+    pgs:     
+
+
+
+创建一个mgr稍等一下
+
+ceph-deploy mgr create ceph1
+
+[root@ceph1 ceph]# ceph -s
+  cluster:
+    id:     18dbcc2e-7031-48b1-a3d5-14c3dc8bdaaf
+    health: HEALTH_WARN
+            OSD count 1 < osd_pool_default_size 3
+ 
+  services:
+    mon: 1 daemons, quorum ceph1 (age 5m)
+    mgr: ceph1(active, since 18s)
+    osd: 1 osds: 1 up (since 4m), 1 in (since 4m)
+ 
+  data:
+    pools:   0 pools, 0 pgs
+    objects: 0 objects, 0 B
+    usage:   1.0 GiB used, 1019 MiB / 2.0 GiB avail  <<---磁盘大小
+    pgs:     
+
+
+添加节点
+[root@ceph1 ceph]# ceph-deploy osd create --data /dev/sdb ceph2
+[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
+[ceph_deploy.cli][INFO  ] Invoked (2.0.1): /usr/bin/ceph-deploy osd create --data /dev/sdb ceph2
+[ceph_deploy.cli][INFO  ] ceph-deploy options:
+[ceph_deploy.cli][INFO  ]  verbose                       : False
+[ceph_deploy.cli][INFO  ]  bluestore                     : None
+
+
+查看
+[root@ceph1 ceph]# ceph -s
+  cluster:
+    id:     18dbcc2e-7031-48b1-a3d5-14c3dc8bdaaf
+    health: HEALTH_WARN
+            OSD count 2 < osd_pool_default_size 3
+ 
+  services:
+    mon: 1 daemons, quorum ceph1 (age 11m)
+    mgr: ceph1(active, since 5m)
+    osd: 2 osds: 2 up (since 41s), 2 in (since 41s)
+ 
+  data:
+    pools:   0 pools, 0 pgs
+    objects: 0 objects, 0 B
+    usage:   2.0 GiB used, 2.0 GiB / 4.0 GiB avail <<-----添加了4G
+    pgs:     
+
+--------------
+
+
+yum install ceph-radosgw -y
+
+在管理节点创建网关
+
+[root@ceph1 ceph]# ceph-deploy rgw create ceph1
+[ceph_deploy.conf][DEBUG ] found configuration file at: /root/.cephdeploy.conf
+[ceph_deploy.cli][INFO  ] Invoked (2.0.1): /usr/bin/ceph-deploy rgw create ceph1
+[ceph_deploy.cli][INFO  ] ceph-deploy options:
+[ceph_deploy.cli][INFO  ]  username                      : None
+[ceph_deploy.cli][INFO  ]  verbose                       : False
+[ceph_deploy.cli][INFO  ]  rgw                           : [('ceph1', 'rgw.ceph1')]
+
+[root@ceph1 ceph]# lsof -i:7480
+COMMAND  PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+radosgw 4832 ceph   44u  IPv4  28721      0t0  TCP *:7480 (LISTEN)
+radosgw 4832 ceph   45u  IPv6  28723      0t0  TCP *:7480 (LISTEN)
+
+-------------网关创建完成集群也创建完成了----------------------------
+
+==========
+
+开启dashboard
+yum install ceph-mgr-dashboard 
+
+1、在每个mgr节点安装
+# yum install ceph-mgr-dashboard 
+2、开启mgr功能
+# ceph mgr module enable dashboard
+
+3、生成并安装自签名的证书
+# ceph dashboard create-self-signed-cert  
+
+4、创建一个dashboard登录用户名密码       用户 密码
+ceph dashboard set-login-credentials admin 123qwe
+# ceph dashboard ac-user-create guest 1q2w3e4r administrator 
+5、查看服务访问方式
+# ceph mgr services
+
+
+[root@ceph1 ~]# ceph dashboard set-login-credentials admin 123qwe
+******************************************************************
+***          WARNING: this command is deprecated.              ***
+*** Please use the ac-user-* related commands to manage users. ***
+******************************************************************
+Username and password updated
+
+----------开启监控---------------
+ceph mgr module enable prometheus
+
+
+[root@ceph1 ~]# ceph mgr services
+{
+    "dashboard": "https://ceph1:8443/",
+    "prometheus": "http://ceph1:9283/"
+}
+
+=========创建S3用户接口=======
+
+创建用于S3访问的RADOSGW用户
+[root@ceph1 ~]# radosgw-admin user create --uid="testuser" --display-name="Jsj User"
+{
+    "user_id": "testuser",
+    "display_name": "Jsj User",
+    "email": "",
+    "suspended": 0,
+    "max_buckets": 1000,
+    "subusers": [],
+    "keys": [
+        {
+            "user": "testuser",
+            "access_key": "PT91WDNRA53DJ44MD9A8",
+            "secret_key": "LKwdmanqHPuslGG5IKYFgBVvHumlUgqmtSep5xzD"
+        }
+    ],
+    "swift_keys": [],
+    "caps": [],
+    "op_mask": "read, write, delete",
+    "default_placement": "",
+    "default_storage_class": "",
+    "placement_tags": [],
+    "bucket_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "user_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "temp_url_keys": [],
+    "type": "rgw",
+    "mfa_ids": []
+}
+
+
+需要创建一个Swift子用户
+[root@ceph1 ~]# radosgw-admin subuser create --uid=testuser --subuser=testuser:swift --access=full
+{
+    "user_id": "testuser",
+    "display_name": "Jsj User",
+    "email": "",
+    "suspended": 0,
+    "max_buckets": 1000,
+    "subusers": [
+        {
+            "id": "testuser:swift",
+            "permissions": "full-control"
+        }
+    ],
+    "keys": [
+        {
+            "user": "testuser",
+            "access_key": "PT91WDNRA53DJ44MD9A8",
+            "secret_key": "LKwdmanqHPuslGG5IKYFgBVvHumlUgqmtSep5xzD"
+        }
+    ],
+    "swift_keys": [
+        {
+            "user": "testuser:swift",
+            "secret_key": "FjfGqrSdbjoEbD1ywfCZNV2o8DD6ND10GmneAUA0"
+        }
+    ],
+    "caps": [],
+    "op_mask": "read, write, delete",
+    "default_placement": "",
+    "default_storage_class": "",
+    "placement_tags": [],
+    "bucket_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "user_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "temp_url_keys": [],
+    "type": "rgw",
+    "mfa_ids": []
+}
+
+
+创建密钥：
+[root@ceph1 ~]# radosgw-admin key create --subuser=testuser:swift --key-type=swift --gen-secret
+{
+    "user_id": "testuser",
+    "display_name": "Jsj User",
+    "email": "",
+    "suspended": 0,
+    "max_buckets": 1000,
+    "subusers": [
+        {
+            "id": "testuser:swift",
+            "permissions": "full-control"
+        }
+    ],
+    "keys": [
+        {
+            "user": "testuser",
+            "access_key": "PT91WDNRA53DJ44MD9A8",
+            "secret_key": "LKwdmanqHPuslGG5IKYFgBVvHumlUgqmtSep5xzD"
+        }
+    ],
+    "swift_keys": [
+        {
+            "user": "testuser:swift",
+            "secret_key": "vDYtE409OF7DyNtlu312odd8yf40zbtfBxCymPsa"
+        }
+    ],
+    "caps": [],
+    "op_mask": "read, write, delete",
+    "default_placement": "",
+    "default_storage_class": "",
+    "placement_tags": [],
+    "bucket_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "user_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "temp_url_keys": [],
+    "type": "rgw",
+    "mfa_ids": []
+}
+
+
+查看用户信息
+[root@ceph1 ~]# radosgw-admin user info --uid=testuser
+{
+    "user_id": "testuser",
+    "display_name": "Jsj User",
+    "email": "",
+    "suspended": 0,
+    "max_buckets": 1000,
+    "subusers": [
+        {
+            "id": "testuser:swift",
+            "permissions": "full-control"
+        }
+    ],
+    "keys": [
+        {
+            "user": "testuser",
+            "access_key": "PT91WDNRA53DJ44MD9A8",
+            "secret_key": "LKwdmanqHPuslGG5IKYFgBVvHumlUgqmtSep5xzD"
+        }
+    ],
+    "swift_keys": [
+        {
+            "user": "testuser:swift",
+            "secret_key": "vDYtE409OF7DyNtlu312odd8yf40zbtfBxCymPsa"
+        }
+    ],
+    "caps": [],
+    "op_mask": "read, write, delete",
+    "default_placement": "",
+    "default_storage_class": "",
+    "placement_tags": [],
+    "bucket_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "user_quota": {
+        "enabled": false,
+        "check_on_raw": false,
+        "max_size": -1,
+        "max_size_kb": 0,
+        "max_objects": -1
+    },
+    "temp_url_keys": [],
+    "type": "rgw",
+    "mfa_ids": []
+}
+
+[root@ceph1 ~]# lsof -i:7480
+COMMAND  PID USER   FD   TYPE DEVICE SIZE/OFF NODE NAME
+radosgw 4832 ceph   44u  IPv4  28721      0t0  TCP *:7480 (LISTEN)
+radosgw 4832 ceph   45u  IPv6  28723      0t0  TCP *:7480 (LISTEN)
+
+
+
+
+
+
+
+
+=============
++++++++++对象存储客户端部署+++++++++++++++++++
+
+yum install -y s3cmd
+
+
+vim /root/.s3cfg
+
+[default] 
+access_key = PT91WDNRA53DJ44MD9A8
+secret_key = LKwdmanqHPuslGG5IKYFgBVvHumlUgqmtSep5xzD
+host_base = 192.168.100.10:7480                <<---------管理节点的IP
+host_bucket = 192.168.100.10:7480/%(bucket)
+cloudfront_host = 192.168.100.10:7480
+use_https = False
+
+在管理节点 输入 radosgw-admin user info --uid=testuser 获取 access_key和secret_key 的信息，然后写入配置 .s3cfg
+
+
+
+
+
+创建桶
+[root@redocke ~]# s3cmd mb s3://testjsj
+Bucket 's3://testjsj/' created
+
+查看桶
+[root@redocke ~]# s3cmd ls s3://
+
+
+来获得对应的bucket所占用的空间大小
+[root@redocke ~]# s3cmd du -H s3://
+39.4799156189M 1 objects s3://testjsj/
+--------
+39.4799156189M Total
+2020-03-16 14:05  s3://testjsj
+
+
+上传文件
+[root@redocke ~]# s3cmd put 19.03.2-3.el7.x86_64.rpm s3://testjsj
+
+
+下载文件
+[root@redocke tmp]# s3cmd get s3://testjsj/docker-ce-cli-19.03.2-3.el7.x86_64.rpm
+download: 's3://testjsj/docker-ce-cli-19.03.2-3.el7.x86_64.rpm' -> './docker-ce-cli-19.03.2-3.el7.x86_64.rpm'  [1 of 1]
+ 41397692 of 41397692   100% in    0s    50.34 MB/s  done
+[root@redocke tmp]# ls
+docker-ce-cli-19.03.2-3.el7.x86_64.rpm
