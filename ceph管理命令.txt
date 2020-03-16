@@ -1,0 +1,62 @@
+s3管理命令
+
+4:列举所有 Buckets。（bucket 相当于根文件夹）
+s3cmd ls
+
+5:创建 bucket，且 bucket 名称是唯一的，不能重复。
+s3cmd mb s3://my-bucket-name
+
+6:删除空 bucket
+s3cmd rb s3://my-bucket-name
+
+7:列举 Bucket 中的内容
+s3cmd ls s3://my-bucket-name
+
+8:上传 file.txt 到某个 bucket，
+s3cmd put file.txt s3://my-bucket-name/file.txt
+
+9:上传并将权限设置为所有人可读
+s3cmd put --acl-public file.txt s3://my-bucket-name/file.txt
+
+10:批量上传文件
+s3cmd put ./* s3://my-bucket-name/
+
+11:下载文件
+s3cmd get s3://my-bucket-name/file.txt file.txt
+
+12:批量下载
+s3cmd get s3://my-bucket-name/* ./
+
+13:删除文件
+s3cmd del s3://my-bucket-name/file.txt
+
+14:来获得对应的bucket所占用的空间大小
+s3cmd du -H s3://my-bucket-name
+-------------------------------------
+
+---------------管理节点命令----------------------
+rados lspools 查看池子
+
+ceph -s 或 ceph status 查看集群状态
+
+ceph -w 观察集群健康状态
+
+ceph quorum_status --format json-pretty 检查ceph monitor仲裁状态
+
+ceph df 检查集群使用情况
+
+ceph mon stat 检查monitor状态
+
+ceph osd stat 检查osd状态
+
+ceph pg stat 检查pg配置组状态
+
+ceph pg dump 列出PG
+
+ceph osd lspools 列出存储池
+
+ceph osd tree 检查osd的crush map
+
+ceph auth list 列出集群的认证密钥
+
+ceph 获取每个osd上pg的数量
